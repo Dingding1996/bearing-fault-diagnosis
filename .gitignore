@@ -37,3 +37,4 @@ __pycache__/
 .DS_Store
 Thumbs.db
 desktop.ini
+.feature_cache_*.pkl

@@ -18,6 +18,12 @@ seaborn==0.13.2
 scikit-learn==1.8.0
 xgboost==3.2.0
 shap==0.51.0
+mlflow==3.10.1
+
+# Deep learning (1D-CNN) — install separately; version depends on CUDA availability.
+# CPU-only:  pip install torch --index-url https://download.pytorch.org/whl/cpu
+# CUDA 12.x: pip install torch --index-url https://download.pytorch.org/whl/cu121
+torch>=2.0.0
 
 # Signal processing
 PyWavelets==1.9.0

@@ -2,9 +2,9 @@
 Paderborn Bearing Dataset - ML Classification
 ===============================================
 Classification pipeline:
-  1. Traditional ML (SVM, RF, kNN, etc.) with hand-crafted features
-  2. 1D-CNN on raw signals
-  3. 2D-CNN on STFT/CWT images
+  1. Traditional ML (CART, RF, GBT, kNN, XGB) with hand-crafted features
+  2. 1D-CNN on raw vibration segments (requires GPU for practical training)
+  3. 2D-CNN on STFT/CWT images (architecture defined; not yet wired into pipeline)
   4. Evaluation and comparison
 
 Author: [Your Name]
@@ -17,11 +17,9 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 from sklearn.metrics import (classification_report, confusion_matrix, 
                               accuracy_score, f1_score)
-from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.neural_network import MLPClassifier
 from xgboost import XGBClassifier
 import warnings
 warnings.filterwarnings('ignore')
@@ -48,10 +46,7 @@ class TraditionalMLPipeline:
             'CART': DecisionTreeClassifier(random_state=42),
             'RF': RandomForestClassifier(n_estimators=100, random_state=42),
             'GBT': GradientBoostingClassifier(n_estimators=100, random_state=42),
-            'SVM_RBF': SVC(kernel='rbf', C=10, gamma='scale', random_state=42),
             'kNN': KNeighborsClassifier(n_neighbors=5),
-            'MLP': MLPClassifier(hidden_layer_sizes=(100, 50), max_iter=500,
-                                  random_state=42),
             'XGB': XGBClassifier(n_estimators=100, learning_rate=0.1,
                                   max_depth=6, random_state=42,
                                   eval_metric='mlogloss', verbosity=0),
@@ -96,16 +91,20 @@ class TraditionalMLPipeline:
             
             print(f"Accuracy: {acc:.4f}, F1: {f1:.4f}")
         
-        # Ensemble (majority voting) - matching the paper
+        # Soft-voting ensemble over the three strongest models.
+        # Hard voting with equal weight across all classifiers dragged the aggregate
+        # below the best individual model in early experiments.
+        # Soft voting uses predicted probabilities so well-calibrated models dominate.
+        _top_names = [n for n in ['GBT', 'RF', 'XGB'] if n in self.models]
         ensemble = VotingClassifier(
-            estimators=[(n, m) for n, m in self.models.items()],
-            voting='hard'
+            estimators=[(n, self.models[n]) for n in _top_names],
+            voting='soft',
         )
         ensemble.fit(X_train_scaled, y_train)
         y_pred_ens = ensemble.predict(X_test_scaled)
         acc_ens = accuracy_score(y_test, y_pred_ens)
         f1_ens = f1_score(y_test, y_pred_ens, average='weighted')
-        
+
         results['Ensemble'] = {
             'accuracy': acc_ens,
             'f1_score': f1_ens,
@@ -113,9 +112,13 @@ class TraditionalMLPipeline:
             'y_pred': y_pred_ens,
             'report': classification_report(y_test, y_pred_ens, output_dict=True),
         }
-        print(f"  Ensemble: Accuracy: {acc_ens:.4f}, F1: {f1_ens:.4f}")
+        print(f"  Ensemble (soft, {'+'.join(_top_names)}): "
+              f"Accuracy: {acc_ens:.4f}, F1: {f1_ens:.4f}")
         
         self.results = results
+        # Store fitted individual models so callers (e.g. MLflow) can log the best one
+        self.fitted_pipelines = {name: model for name, model in self.models.items()}
+        self.fitted_pipelines['Ensemble'] = ensemble
         return results
     
     def cross_validate(self, X: np.ndarray, y: np.ndarray, 
