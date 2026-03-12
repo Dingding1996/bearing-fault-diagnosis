@@ -22,6 +22,7 @@ from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier,
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.neural_network import MLPClassifier
+from xgboost import XGBClassifier
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -48,10 +49,12 @@ class TraditionalMLPipeline:
             'RF': RandomForestClassifier(n_estimators=100, random_state=42),
             'GBT': GradientBoostingClassifier(n_estimators=100, random_state=42),
             'SVM_RBF': SVC(kernel='rbf', C=10, gamma='scale', random_state=42),
-            'SVM_Linear': SVC(kernel='linear', C=1, random_state=42),
             'kNN': KNeighborsClassifier(n_neighbors=5),
-            'MLP': MLPClassifier(hidden_layer_sizes=(100, 50), max_iter=500, 
+            'MLP': MLPClassifier(hidden_layer_sizes=(100, 50), max_iter=500,
                                   random_state=42),
+            'XGB': XGBClassifier(n_estimators=100, learning_rate=0.1,
+                                  max_depth=6, random_state=42,
+                                  eval_metric='mlogloss', verbosity=0),
         }
     
     def train_and_evaluate(self, X_train: np.ndarray, y_train: np.ndarray,
