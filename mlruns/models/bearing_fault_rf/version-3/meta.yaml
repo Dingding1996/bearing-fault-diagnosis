@@ -1,0 +1,16 @@
+creation_timestamp: 1773327358882
+current_stage: None
+deployment_job_state: null
+description: null
+last_updated_timestamp: 1773327358882
+model_id: m-e28bcfb7a6de4ca78d974afde4b3955b
+name: bearing_fault_rf
+run_id: da75888f6f164d798be7028936b9629a
+run_link: null
+source: models:/m-e28bcfb7a6de4ca78d974afde4b3955b
+status: READY
+status_message: null
+storage_location: file:///C:\8. ds\mlruns/315850400606662100/models/m-e28bcfb7a6de4ca78d974afde4b3955b/artifacts
+user_id: null
+version: 3
+workspace: default

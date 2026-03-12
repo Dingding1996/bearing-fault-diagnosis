@@ -36,7 +36,7 @@ except ImportError:
 BASE_URL = "https://zenodo.org/records/15845309/files"
 
 # Default data directory relative to this file
-DEFAULT_DATA_DIR = Path(__file__).parent / 'paderborn_data'
+DEFAULT_DATA_DIR = Path(__file__).parent.parent / 'paderborn_data'  # project root, not utils/
 
 ALL_BEARINGS = [
     # Healthy
