@@ -3,9 +3,6 @@ Paderborn Bearing Dataset - Data Loader
 ========================================
 Loads .mat files from the Paderborn University bearing dataset
 and provides structured access to signals and metadata.
-
-Author: [Your Name]
-Project: Bearing Fault Diagnosis via Motor Current Signals
 """
 
 import os
@@ -284,12 +281,13 @@ def calc_characteristic_frequencies(rpm: float) -> Dict[str, float]:
 # Quick test
 # ============================================================
 if __name__ == '__main__':
-    # Test with single file
     import glob
-    
-    test_files = glob.glob('/mnt/user-data/uploads/*K001*.mat')
+    from pathlib import Path
+
+    data_dir = Path(__file__).parent.parent / 'paderborn_data' / 'mat'
+    test_files = sorted(data_dir.glob('K001/*.mat'))
     if test_files:
-        sig = load_mat_file(test_files[0])
+        sig = load_mat_file(str(test_files[0]))
         print(f"Bearing: {sig.bearing_code}")
         print(f"Label: {sig.label_name} (class {sig.label_3class})")
         print(f"Setting: {sig.setting}")
@@ -297,10 +295,10 @@ if __name__ == '__main__':
         print(f"Vibration shape: {sig.vibration.shape}")
         print(f"Speed mean: {sig.speed.mean():.1f} rpm")
         print(f"Temperature mean: {sig.temperature.mean():.1f} °C")
-        
+
         freqs = calc_characteristic_frequencies(sig.speed.mean())
         print(f"\nCharacteristic frequencies at {sig.speed.mean():.0f} rpm:")
         for name, f in freqs.items():
             print(f"  {name}: {f:.2f} Hz")
     else:
-        print("No test files found. Place .mat files in the uploads directory.")
+        print(f"No test files found in {data_dir}. Run utils/download_dataset.py first.")

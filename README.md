@@ -9,16 +9,20 @@ Sensorless fault detection in electric drive systems via DSP feature engineering
 
 ```
 ds_projects/
-├── 00_download_dataset.py   # Dataset downloader (library + CLI)
-├── 01_data_loader.py        # Data loading, label mapping, characteristic frequency calculation
-├── 02_dsp_features.py       # DSP feature extraction (time / frequency / time-frequency / envelope)
-├── 03_ml_classification.py  # ML classifiers (traditional ML + 1D-CNN + 2D-CNN)
-├── 04_main_pipeline.py      # Entry point — run this
-├── requirements.txt         # Pinned dependencies
-├── README.md                # This file
-└── paderborn_data/          # Downloaded dataset (gitignored)
-    ├── rar/                 # Temporary .rar archives (deleted after extraction)
-    └── mat/                 # Extracted .mat files, one folder per bearing
+├── BearingFault_Training.ipynb  # End-to-end training pipeline (DSP → ML → MLflow)
+├── BearingFault_Inference.ipynb # Inference demo (load model → direct + API prediction)
+├── requirements.txt             # Pinned dependencies
+├── README.md                    # This file
+├── utils/
+│   ├── download_dataset.py      # Dataset downloader (library + CLI)
+│   ├── data_loader.py           # Data loading, label mapping, characteristic frequency calculation
+│   ├── dsp_features.py          # DSP feature extraction (time / frequency / time-frequency / envelope)
+│   ├── ml_classification.py     # ML classifiers (traditional ML + 1D-CNN + 2D-CNN)
+│   ├── inference_api.py         # FastAPI inference service
+│   └── plot_style.py            # Portfolio-wide figure styling
+└── paderborn_data/              # Downloaded dataset (gitignored)
+    ├── rar/                     # Temporary .rar archives (deleted after extraction)
+    └── mat/                     # Extracted .mat files, one folder per bearing
 ```
 
 ## Dataset
@@ -36,17 +40,20 @@ ds_projects/
 conda activate ds-py311
 pip install -r requirements.txt
 
-# 2. Run the full pipeline (downloads data automatically if missing)
-python 04_main_pipeline.py
+# 2. Open and run the training notebook (downloads data automatically if missing)
+jupyter lab BearingFault_Training.ipynb
+
+# 3. After training, explore inference
+jupyter lab BearingFault_Inference.ipynb
 ```
 
-The pipeline calls `ensure_data()` at startup — if the dataset is already on disk it
+The notebook calls `ensure_data()` at startup — if the dataset is already on disk it
 skips the download and runs immediately.
 
 To download data separately:
 ```bash
-python 00_download_dataset.py --minimal    # ~2.4 GB, 15 bearings (recommended)
-python 00_download_dataset.py             # full dataset, all 32 bearings
+python utils/download_dataset.py --minimal    # ~2.4 GB, 15 bearings (recommended)
+python utils/download_dataset.py              # full dataset, all 32 bearings
 ```
 
 ## Roadmap
@@ -61,7 +68,8 @@ python 00_download_dataset.py             # full dataset, all 32 bearings
 
 ### Phase 2 — Traditional ML Classification
 - [x] Feature extraction pipeline
-- [x] 7 classifiers (CART, RF, GBT, SVM, kNN, MLP, Ensemble)
+- [x] 3 classifiers (RF, GBT, XGBoost) with RandomizedSearchCV tuning
+- [x] MLflow experiment tracking
 - [ ] Reproduce paper baseline results
 - [ ] Feature selection and optimisation
 

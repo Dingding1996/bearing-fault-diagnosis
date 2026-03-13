@@ -12,6 +12,12 @@ data/
 paderborn_data/
 
 # ============================================================
+# MLflow (experiment tracking — local, not versioned)
+# ============================================================
+mlruns/
+mlflow.db
+
+# ============================================================
 # Generated outputs (reproducible from notebook — not versioned)
 # ============================================================
 plots/

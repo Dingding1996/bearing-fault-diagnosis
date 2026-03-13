@@ -2,12 +2,10 @@
 Paderborn Bearing Dataset - ML Classification
 ===============================================
 Classification pipeline:
-  1. Traditional ML (CART, RF, GBT, kNN, XGB) with hand-crafted features
-  2. 1D-CNN on raw vibration segments (requires GPU for practical training)
+  1. Traditional ML (RF, GBT, XGBoost) with hand-crafted features
+  2. 1D-CNN on raw signal segments (requires GPU for practical training)
   3. 2D-CNN on STFT/CWT images (architecture defined; not yet wired into pipeline)
   4. Evaluation and comparison
-
-Author: [Your Name]
 """
 
 import numpy as np

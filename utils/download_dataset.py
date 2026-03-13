@@ -4,14 +4,14 @@ Paderborn Bearing Dataset - Download & Extract
 Can be used as a library or run directly as a script.
 
 As a library:
-    from 00_download_dataset import ensure_data, MINIMAL_SET
+    from utils.download_dataset import ensure_data, MINIMAL_SET
     mat_dir = ensure_data(MINIMAL_SET)
 
 As a script:
-    python 00_download_dataset.py                   # download all bearings
-    python 00_download_dataset.py --minimal         # download subset only
-    python 00_download_dataset.py --bearings K001 KA01 KI03
-    python 00_download_dataset.py --output_dir /path/to/save
+    python utils/download_dataset.py                   # download all bearings
+    python utils/download_dataset.py --minimal         # download subset only
+    python utils/download_dataset.py --bearings K001 KA01 KI03
+    python utils/download_dataset.py --output_dir /path/to/save
 
 Requirements:
     pip install requests tqdm

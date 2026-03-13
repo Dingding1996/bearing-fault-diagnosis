@@ -6,13 +6,10 @@ Signal processing pipeline for bearing fault diagnosis:
   2. Frequency-domain features (FFT, PSD)
   3. Time-frequency features (STFT, CWT, WPD)
   4. Envelope analysis (for bearing characteristic frequencies)
-
-Author: [Your Name]
 """
 
 import numpy as np
-from scipy.signal import stft, welch, hilbert, butter, filtfilt, sosfilt
-from scipy.signal import butter, sosfiltfilt
+from scipy.signal import stft, welch, hilbert, butter, sosfiltfilt
 from scipy.fft import fft, fftfreq
 from typing import Dict, Tuple, List, Optional
 
