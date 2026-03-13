@@ -1,0 +1,43 @@
+# =============================================================
+# Files excluded from Docker build context
+# Keeps the image small and avoids copying sensitive/large files
+# =============================================================
+
+# Dataset (large — mount as volume instead)
+paderborn_data/
+data/
+
+# MLflow artefacts (mount as volume at runtime)
+mlruns/
+mlflow.db
+
+# Notebooks and training-only files
+*.ipynb
+*.ipynb_checkpoints/
+plots/
+*.pkl
+
+# Python build artefacts
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Git and tooling
+.git/
+.gitignore
+.claude/
+CLAUDE.md
+
+# Credentials
+.env
+.kaggle/
+kaggle.json
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Docs
+*.pdf
+README.md

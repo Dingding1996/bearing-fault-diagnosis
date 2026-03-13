@@ -1,0 +1,35 @@
+# =============================================================
+# Bearing Fault Diagnosis — Local Compose Stack
+# =============================================================
+# Usage:
+#   docker compose up --build      # first run (builds image)
+#   docker compose up              # subsequent runs
+#   docker compose down            # stop and remove containers
+#
+# API will be available at:
+#   http://localhost:8000/predict
+#   http://localhost:8000/docs     (Swagger UI)
+# =============================================================
+
+services:
+  api:
+    build: .
+    image: bearing-fault-api:latest
+    container_name: bearing-fault-api
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount trained model artefacts read-only.
+      # Run BearingFault_Training.ipynb on the host first to populate mlruns/.
+      - ./mlruns:/app/mlruns:ro
+    environment:
+      # Suppress MLflow progress bars in container logs
+      - MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR=false
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

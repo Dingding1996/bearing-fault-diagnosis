@@ -1,7 +1,11 @@
 """
 Bearing Fault Diagnosis — FastAPI Inference Service
 ====================================================
-Loads the best model from MLflow and exposes a /predict endpoint.
+Loads the best model from MLflow and exposes two endpoints:
+
+  POST /predict      — accepts pre-extracted feature vectors (171 values each)
+  POST /predict_mat  — accepts a raw .mat file; DSP feature extraction is done
+                       server-side so the caller only needs to supply the file
 
 Usage:
     python utils/inference_api.py
@@ -10,53 +14,100 @@ Usage:
 """
 
 import sys
+import tempfile
 from pathlib import Path
 
 import mlflow
 import numpy as np
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
+# Ensure the project root is on sys.path so utils sub-modules are importable
+# whether the file is run directly or via `uvicorn utils.inference_api:app`.
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from utils.data_loader import (  # noqa: E402
+    OPERATING_CONDITIONS,
+    calc_characteristic_frequencies,
+    load_mat_file,
+)
+from utils.dsp_features import extract_features_from_bearing  # noqa: E402
+
 # ---------------------------------------------------------------------------
-# Config — edit these to match your latest MLflow run
+# Config
 # ---------------------------------------------------------------------------
-_BASE_DIR    = Path(__file__).parent.parent
-MLRUNS_URI   = f"file:///{_BASE_DIR / 'mlruns'}"
-EXPERIMENT   = "paderborn-bearing-fault"
-CLASS_NAMES  = ["Healthy", "OR_damage", "IR_damage"]
+_BASE_DIR      = Path(__file__).parent.parent
+MLRUNS_URI     = f"file:///{_BASE_DIR / 'mlruns'}"
+CLASS_NAMES    = ["Healthy", "OR_damage", "IR_damage"]
+MODEL_NAME     = "bearing_fault_xgb"       # registered model name in MLflow Registry
+SELECTOR_NAME  = "bearing_fault_selector"  # registered selector name in MLflow Registry
 
 # ---------------------------------------------------------------------------
 # Load model at startup (once)
 # ---------------------------------------------------------------------------
 mlflow.set_tracking_uri(MLRUNS_URI)
 
-_runs = mlflow.search_runs(
-    experiment_names=[EXPERIMENT],
-    order_by=["start_time DESC"],
-)
-if _runs.empty:
-    raise RuntimeError(f"No runs found in experiment '{EXPERIMENT}'.")
+_client = mlflow.MlflowClient()
 
-_run_id  = _runs.iloc[0]["run_id"]
-selector = mlflow.sklearn.load_model(f"runs:/{_run_id}/feature_selector")
-model    = mlflow.sklearn.load_model(f"runs:/{_run_id}/best_model")
 
-print(f"Model loaded from run: {_run_id[:8]}...")
-print(f"Best model: {_runs.iloc[0].get('params.best_model', 'unknown')}")
+def _load_registered(name: str) -> object:
+    """Load the latest version of a registered sklearn model.
+
+    Reads storage_location from the version meta.yaml directly — bypasses the
+    MLflow client API which no longer exposes storage_location in MLflow 3.x,
+    and also avoids cross-OS path issues (Windows paths in Linux containers).
+    """
+    import yaml  # bundled with mlflow
+
+    models_dir = _BASE_DIR / "mlruns" / "models" / name
+    version_dirs = sorted(models_dir.glob("version-*"), key=lambda p: int(p.name.split("-")[1]))
+    if not version_dirs:
+        raise RuntimeError(f"No versions found for registered model '{name}'")
+
+    meta = yaml.safe_load((version_dirs[-1] / "meta.yaml").read_text())
+    storage_location: str = meta["storage_location"]
+
+    # Convert Windows absolute URI (file:///C:\...\mlruns/...) to container path
+    normalised = storage_location.replace("\\", "/")
+    idx = normalised.find("mlruns/")
+    if idx == -1:
+        raise RuntimeError(f"Cannot find 'mlruns/' in storage_location: {storage_location}")
+    relative = normalised[idx + len("mlruns/"):]
+    artifact_path = _BASE_DIR / "mlruns" / relative
+
+    return mlflow.sklearn.load_model(str(artifact_path))
+
+
+selector = _load_registered(SELECTOR_NAME)
+model    = _load_registered(MODEL_NAME)
+
+_latest_version = _client.get_registered_model(MODEL_NAME).latest_versions[-1]
+_run_id = _latest_version.run_id or "registry"
+
+print(f"Selector loaded : models:/{SELECTOR_NAME}/latest")
+print(f"Model loaded    : models:/{MODEL_NAME}/latest  (run {_run_id[:8]}...)")
 
 # ---------------------------------------------------------------------------
 # FastAPI app
 # ---------------------------------------------------------------------------
 app = FastAPI(
     title="Bearing Fault Diagnosis API",
-    description="3-class fault classification: Healthy / OR_damage / IR_damage",
-    version="1.0.0",
+    description=(
+        "3-class fault classification: Healthy / OR_damage / IR_damage\n\n"
+        "**Two endpoints available:**\n"
+        "- `/predict`     — send pre-extracted feature vectors (183 floats each)\n"
+        "- `/predict_mat` — upload a raw `.mat` file; feature extraction is done server-side"
+    ),
+    version="1.1.0",
 )
 
 
+# ---------------------------------------------------------------------------
+# Schemas
+# ---------------------------------------------------------------------------
 class FeaturesInput(BaseModel):
-    """Input schema: list of raw DSP feature vectors (171 features each)."""
+    """Input schema: list of pre-extracted DSP feature vectors."""
     features: list[list[float]]
 
 
@@ -67,31 +118,34 @@ class PredictionOutput(BaseModel):
     run_id: str
 
 
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
 @app.get("/health")
 def health():
-    """Health check endpoint."""
+    """Health check."""
     return {"status": "ok", "run_id": _run_id[:8]}
 
 
 @app.post("/predict", response_model=PredictionOutput)
 def predict(payload: FeaturesInput):
     """
-    Predict bearing fault class from raw DSP feature vectors.
+    Predict bearing fault class from pre-extracted DSP feature vectors.
 
     Args:
-        payload: JSON with key 'features' — list of feature vectors (171 values each).
+        payload: JSON with key 'features' — list of feature vectors (183 values each).
 
     Returns:
         Predicted class indices and human-readable labels.
 
     Example:
         POST /predict
-        {"features": [[f1, f2, ..., f171], [f1, f2, ..., f171]]}
+        {"features": [[f1, f2, ..., f183], ...]}
     """
     try:
         X = np.array(payload.features, dtype=np.float32)
-        X_fs = selector.transform(X)       # 171 -> ~85 features
-        y_pred = model.predict(X_fs)       # scaler + classifier inside
+        X_fs = selector.transform(X)
+        y_pred = model.predict(X_fs)
         labels = [CLASS_NAMES[i] for i in y_pred]
         return PredictionOutput(
             predictions=y_pred.tolist(),
@@ -100,6 +154,73 @@ def predict(payload: FeaturesInput):
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/predict_mat", response_model=PredictionOutput)
+async def predict_mat(file: UploadFile = File(...)):
+    """
+    Predict bearing fault class from a raw Paderborn .mat file.
+
+    The full pipeline runs server-side:
+      .mat file → load signals → DSP feature extraction (171 features)
+               → feature selection → model prediction → fault label
+
+    The filename must follow Paderborn naming convention so the operating
+    condition (speed / torque) can be parsed automatically, e.g.:
+      N15_M07_F10_K001_1.mat
+
+    Returns:
+        Predicted class index, label, and serving run ID.
+    """
+    if not file.filename.endswith(".mat"):
+        raise HTTPException(status_code=400, detail="Uploaded file must be a .mat file.")
+
+    tmp_path = None
+    try:
+        # Write upload to a named temp file so load_mat_file() can parse it.
+        # The suffix preserves the original filename for parse_filename().
+        with tempfile.NamedTemporaryFile(
+            suffix=f"_{file.filename}", delete=False
+        ) as tmp:
+            tmp.write(await file.read())
+            tmp_path = tmp.name
+
+        sig = load_mat_file(tmp_path)
+
+        if sig.setting not in OPERATING_CONDITIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown operating condition '{sig.setting}'. "
+                       f"Expected one of: {list(OPERATING_CONDITIONS.keys())}",
+            )
+
+        rpm        = OPERATING_CONDITIONS[sig.setting]["speed_rpm"]
+        char_freqs = calc_characteristic_frequencies(rpm)
+        feats      = extract_features_from_bearing(
+            sig,
+            use_current=True,
+            use_vibration=True,
+            characteristic_freqs=char_freqs,
+        )
+
+        X      = np.array([list(feats.values())], dtype=np.float32)
+        X_fs   = selector.transform(X)
+        y_pred = model.predict(X_fs)
+        labels = [CLASS_NAMES[i] for i in y_pred]
+
+        return PredictionOutput(
+            predictions=y_pred.tolist(),
+            labels=labels,
+            run_id=_run_id[:8],
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if tmp_path:
+            Path(tmp_path).unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

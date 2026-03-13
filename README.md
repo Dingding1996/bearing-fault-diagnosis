@@ -9,20 +9,24 @@ Sensorless fault detection in electric drive systems via DSP feature engineering
 
 ```
 ds_projects/
-├── BearingFault_Training.ipynb  # End-to-end training pipeline (DSP → ML → MLflow)
-├── BearingFault_Inference.ipynb # Inference demo (load model → direct + API prediction)
-├── requirements.txt             # Pinned dependencies
-├── README.md                    # This file
+├── BearingFault_Training.ipynb   # End-to-end training pipeline (DSP → ML → MLflow)
+├── BearingFault_Inference.ipynb  # Inference demo (load model → direct + API prediction)
+├── requirements.txt              # Pinned dependencies (training environment)
+├── requirements-inference.txt    # Minimal dependencies for the Docker inference service
+├── Dockerfile                    # Container image for the FastAPI inference service
+├── docker-compose.yml            # Compose config — mounts mlruns/, exposes port 8000
+├── README.md                     # This file
 ├── utils/
-│   ├── download_dataset.py      # Dataset downloader (library + CLI)
-│   ├── data_loader.py           # Data loading, label mapping, characteristic frequency calculation
-│   ├── dsp_features.py          # DSP feature extraction (time / frequency / time-frequency / envelope)
-│   ├── ml_classification.py     # ML classifiers (traditional ML + 1D-CNN + 2D-CNN)
-│   ├── inference_api.py         # FastAPI inference service
-│   └── plot_style.py            # Portfolio-wide figure styling
-└── paderborn_data/              # Downloaded dataset (gitignored)
-    ├── rar/                     # Temporary .rar archives (deleted after extraction)
-    └── mat/                     # Extracted .mat files, one folder per bearing
+│   ├── download_dataset.py       # Dataset downloader (library + CLI)
+│   ├── data_loader.py            # Data loading, label mapping, characteristic frequency calculation
+│   ├── dsp_features.py           # DSP feature extraction (183 features: time / freq / TF / envelope)
+│   ├── ml_classification.py      # ML classifiers (RF, GBT, XGBoost)
+│   ├── inference_api.py          # FastAPI inference service (loaded by Docker)
+│   └── plot_style.py             # Portfolio-wide figure styling
+├── mlruns/                       # MLflow experiment tracking + model registry (gitignored)
+└── paderborn_data/               # Downloaded dataset (gitignored)
+    ├── rar/                      # Temporary .rar archives (deleted after extraction)
+    └── mat/                      # Extracted .mat files, one folder per bearing
 ```
 
 ## Dataset
@@ -35,6 +39,7 @@ ds_projects/
 
 ## Quick Start
 
+### Training
 ```bash
 # 1. Create and activate the environment
 conda activate ds-py311
@@ -56,6 +61,41 @@ python utils/download_dataset.py --minimal    # ~2.4 GB, 15 bearings (recommende
 python utils/download_dataset.py              # full dataset, all 32 bearings
 ```
 
+### Inference API (Docker)
+
+Requires [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+
+```bash
+# Start the API (builds image on first run)
+docker compose up --build
+
+# API is now running at http://localhost:8000
+# Interactive docs: http://localhost:8000/docs
+```
+
+**Endpoints:**
+
+| Endpoint | Method | Input | Description |
+|---|---|---|---|
+| `/health` | GET | — | Health check |
+| `/predict` | POST | JSON with `features` (183 floats per signal) | Predict from pre-extracted features |
+| `/predict_mat` | POST | `.mat` file upload | Full pipeline: raw file → DSP features → prediction |
+
+**Example — upload a raw `.mat` file:**
+```bash
+curl -X POST http://localhost:8000/predict_mat \
+  -F "file=@paderborn_data/mat/KA01/N15_M07_F10_KA01_1.mat"
+```
+
+**Response:**
+```json
+{
+  "predictions": [2],
+  "labels": ["IR_damage"],
+  "run_id": "b1710f7b"
+}
+```
+
 ## Roadmap
 
 ### Phase 1 — DSP Signal Processing
@@ -67,9 +107,10 @@ python utils/download_dataset.py              # full dataset, all 32 bearings
 - [x] Characteristic frequency calculation (BPFO, BPFI, BSF, FTF)
 
 ### Phase 2 — Traditional ML Classification
-- [x] Feature extraction pipeline
+- [x] Feature extraction pipeline (183 features per signal)
 - [x] 3 classifiers (RF, GBT, XGBoost) with RandomizedSearchCV tuning
-- [x] MLflow experiment tracking
+- [x] MLflow experiment tracking + model registry
+- [x] FastAPI inference service + Docker deployment
 - [ ] Reproduce paper baseline results
 - [ ] Feature selection and optimisation
 
@@ -108,6 +149,4 @@ python utils/download_dataset.py              # full dataset, all 32 bearings
 
 ## References
 
-1. Lessmeier, C., et al. (2016). "Condition Monitoring of Bearing Damage in Electromechanical Drive Systems by Using Motor Current Signals." PHME 2016.
-2. Randall, R.B. (2011). *Vibration-based Condition Monitoring.* Wiley.
-3. Smith, W.A. & Randall, R.B. (2015). "Rolling element bearing diagnostics using the CWRU data." MSSP.
+1. Lessmeier, C., et al. (2016). "Condition Monitoring of Bearing Damage in Electromechanical Drive Systems by Using Motor Current Signals of Electric Motors: A Benchmark Data Set for Data-Driven Classification" PHME 2016.
