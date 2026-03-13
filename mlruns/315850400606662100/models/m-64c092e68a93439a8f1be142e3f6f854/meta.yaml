@@ -1,0 +1,10 @@
+artifact_location: file:///C:\8. ds\mlruns/315850400606662100/models/m-64c092e68a93439a8f1be142e3f6f854/artifacts
+creation_timestamp: 1773345109398
+experiment_id: '315850400606662100'
+last_updated_timestamp: 1773345116500
+model_id: m-64c092e68a93439a8f1be142e3f6f854
+model_type: null
+name: feature_selector
+source_run_id: bc24bfd373e54479a925ee78c637fa11
+status: 2
+status_message: null

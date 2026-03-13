@@ -359,18 +359,37 @@ def envelope_features(signal: np.ndarray, fs: int,
     for name, f_char in characteristic_freqs.items():
         if f_char <= 0:
             continue
-            
+
         # Search for peak near characteristic frequency and its harmonics
         for harmonic in [1, 2, 3]:
             f_target = f_char * harmonic
             mask = (freqs >= f_target - tolerance) & (freqs <= f_target + tolerance)
-            
+
             if np.any(mask):
                 peak_amp = np.max(env_spectrum[mask])
                 features[f'env_{name}_{harmonic}x'] = float(peak_amp)
             else:
                 features[f'env_{name}_{harmonic}x'] = 0.0
-    
+
+    # --- BPFO/BPFI ratio features ---
+    # Physical basis: OR damage activates BPFO harmonics; IR damage activates BPFI.
+    # The ratio directly encodes which fault type dominates, providing a strong
+    # discriminator for the OR/IR classification boundary that individual harmonic
+    # amplitudes alone cannot capture.
+    #   ratio >> 1  →  BPFO dominant  →  OR damage
+    #   ratio << 1  →  BPFI dominant  →  IR damage
+    _eps = 1e-10   # prevent division by zero on silent channels
+    if 'BPFO' in characteristic_freqs and 'BPFI' in characteristic_freqs:
+        for harmonic in [1, 2, 3]:
+            _bpfo = features.get(f'env_BPFO_{harmonic}x', 0.0)
+            _bpfi = features.get(f'env_BPFI_{harmonic}x', 0.0)
+            features[f'ratio_BPFO_BPFI_{harmonic}x'] = _bpfo / (_bpfi + _eps)
+
+        # Sum of all three harmonics — more robust than any single harmonic
+        _bpfo_sum = sum(features.get(f'env_BPFO_{h}x', 0.0) for h in [1, 2, 3])
+        _bpfi_sum = sum(features.get(f'env_BPFI_{h}x', 0.0) for h in [1, 2, 3])
+        features['ratio_BPFO_BPFI_sum'] = _bpfo_sum / (_bpfi_sum + _eps)
+
     return features
 
 

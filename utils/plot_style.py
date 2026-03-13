@@ -1,15 +1,17 @@
 """utils/plot_style.py
 
-Portfolio-wide figure styling.  Two palettes are defined:
+Portfolio-wide figure styling.  Three palettes are defined:
   CMAP       — healthy / baseline condition
-  CMAP_DMG   — damaged / fault condition  (dark:salmon_r)
+  CMAP_DMG   — outer race damaged condition  (dark:salmon_r)
+  CMAP_IR    — inner race damaged condition  (ch:start=.4,rot=.3)
 
 Usage (Section 0 of any notebook)::
 
     plot_style = _load_module("plot_style", "utils/plot_style.py")
     from plot_style import (apply_style, FigSize,
                             CMAP, C1, C2, C3, FAULT_COLORS,
-                            CMAP_DMG, D1, D2, D3, FAULT_COLORS_DMG)
+                            CMAP_DMG, D1, D2, D3, FAULT_COLORS_DMG,
+                            CMAP_IR,  I1, I2, I3, FAULT_COLORS_IR)
     apply_style()
 """
 
@@ -22,7 +24,8 @@ import seaborn as sns
 # ---------------------------------------------------------------------------
 
 CMAP     = sns.color_palette("ch:start=.2,rot=-.3",  as_cmap=True)  # healthy
-CMAP_DMG = sns.color_palette("dark:salmon_r",         as_cmap=True)  # damaged
+CMAP_DMG = sns.color_palette("dark:salmon_r",         as_cmap=True)  # OR damage
+CMAP_IR  = sns.color_palette("ch:start=.4,rot=.3",   as_cmap=True)  # IR damage
 
 
 def blues(n: int, lo: float = 0.35, hi: float = 0.95) -> list:
@@ -40,7 +43,7 @@ def blues(n: int, lo: float = 0.35, hi: float = 0.95) -> list:
 
 
 def salmons(n: int, lo: float = 0.35, hi: float = 0.95) -> list:
-    """Return n evenly-spaced RGBA colours from CMAP_DMG (damaged palette).
+    """Return n evenly-spaced RGBA colours from CMAP_DMG (OR damage palette).
 
     Args:
         n:   Number of colours to return.
@@ -53,13 +56,30 @@ def salmons(n: int, lo: float = 0.35, hi: float = 0.95) -> list:
     return [CMAP_DMG(v) for v in np.linspace(lo, hi, n)]
 
 
+def greens(n: int, lo: float = 0.35, hi: float = 0.95) -> list:
+    """Return n evenly-spaced RGBA colours from CMAP_IR (IR damage palette).
+
+    Args:
+        n:   Number of colours to return.
+        lo:  Lower bound on the colormap.
+        hi:  Upper bound on the colormap.
+
+    Returns:
+        List of n RGBA tuples.
+    """
+    return [CMAP_IR(v) for v in np.linspace(lo, hi, n)]
+
+
 # Three standard line colours — healthy
 C1, C2, C3 = blues(3)
 
-# Three standard line colours — damaged
+# Three standard line colours — OR damage
 D1, D2, D3 = salmons(3)
 
-# Fault-frequency marker colours (4 shades) — healthy and damaged variants
+# Three standard line colours — IR damage
+I1, I2, I3 = greens(3)
+
+# Fault-frequency marker colours (4 shades) — healthy, OR damage, IR damage
 FAULT_COLORS: dict = dict(zip(
     ["FTF", "BSF", "BPFO", "BPFI"],
     blues(4, lo=0.30, hi=0.95),
@@ -68,6 +88,11 @@ FAULT_COLORS: dict = dict(zip(
 FAULT_COLORS_DMG: dict = dict(zip(
     ["FTF", "BSF", "BPFO", "BPFI"],
     salmons(4, lo=0.30, hi=0.95),
+))
+
+FAULT_COLORS_IR: dict = dict(zip(
+    ["FTF", "BSF", "BPFO", "BPFI"],
+    greens(4, lo=0.30, hi=0.95),
 ))
 
 # ---------------------------------------------------------------------------
