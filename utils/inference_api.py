@@ -1,9 +1,8 @@
 """
 Bearing Fault Diagnosis — FastAPI Inference Service
 ====================================================
-Loads the best model from MLflow and exposes two endpoints:
+Loads the best model from MLflow and exposes one endpoint:
 
-  POST /predict      — accepts pre-extracted feature vectors (171 values each)
   POST /predict_mat  — accepts a raw .mat file; DSP feature extraction is done
                        server-side so the caller only needs to supply the file
 
@@ -95,22 +94,15 @@ app = FastAPI(
     title="Bearing Fault Diagnosis API",
     description=(
         "3-class fault classification: Healthy / OR_damage / IR_damage\n\n"
-        "**Two endpoints available:**\n"
-        "- `/predict`     — send pre-extracted feature vectors (183 floats each)\n"
-        "- `/predict_mat` — upload a raw `.mat` file; feature extraction is done server-side"
+        "Upload a raw `.mat` file; the full DSP feature extraction pipeline runs server-side."
     ),
-    version="1.1.0",
+    version="1.2.0",
 )
 
 
 # ---------------------------------------------------------------------------
 # Schemas
 # ---------------------------------------------------------------------------
-class FeaturesInput(BaseModel):
-    """Input schema: list of pre-extracted DSP feature vectors."""
-    features: list[list[float]]
-
-
 class PredictionOutput(BaseModel):
     """Output schema: predicted class index and label for each input."""
     predictions: list[int]
@@ -125,35 +117,6 @@ class PredictionOutput(BaseModel):
 def health():
     """Health check."""
     return {"status": "ok", "run_id": _run_id[:8]}
-
-
-@app.post("/predict", response_model=PredictionOutput)
-def predict(payload: FeaturesInput):
-    """
-    Predict bearing fault class from pre-extracted DSP feature vectors.
-
-    Args:
-        payload: JSON with key 'features' — list of feature vectors (183 values each).
-
-    Returns:
-        Predicted class indices and human-readable labels.
-
-    Example:
-        POST /predict
-        {"features": [[f1, f2, ..., f183], ...]}
-    """
-    try:
-        X = np.array(payload.features, dtype=np.float32)
-        X_fs = selector.transform(X)
-        y_pred = model.predict(X_fs)
-        labels = [CLASS_NAMES[i] for i in y_pred]
-        return PredictionOutput(
-            predictions=y_pred.tolist(),
-            labels=labels,
-            run_id=_run_id[:8],
-        )
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/predict_mat", response_model=PredictionOutput)
