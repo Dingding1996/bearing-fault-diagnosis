@@ -12,9 +12,12 @@ Usage:
     uvicorn utils.inference_api:app --reload --port 8000
 """
 
+import dataclasses
+import pickle
 import sys
 import tempfile
 from pathlib import Path
+from typing import Dict
 
 import mlflow
 import numpy as np
@@ -88,6 +91,39 @@ print(f"Selector loaded : models:/{SELECTOR_NAME}/latest")
 print(f"Model loaded    : models:/{MODEL_NAME}/latest  (run {_run_id[:8]}...)")
 
 # ---------------------------------------------------------------------------
+# Load per-condition signal normalisation stats (saved by MLflow logging cell)
+# ---------------------------------------------------------------------------
+_sig_stats_path = _BASE_DIR / "mlruns" / "cond_signal_stats.pkl"
+if _sig_stats_path.exists():
+    with open(_sig_stats_path, "rb") as _f:
+        _COND_SIGNAL_STATS: dict = pickle.load(_f)
+    print(f"Signal stats loaded from {_sig_stats_path.name}  "
+          f"(conditions: {list(_COND_SIGNAL_STATS.keys())})")
+else:
+    _COND_SIGNAL_STATS = {}
+    print("WARNING: cond_signal_stats.pkl not found — signal normalisation skipped")
+
+
+# ---------------------------------------------------------------------------
+# Preprocessing helpers (must mirror the notebook training pipeline exactly)
+# ---------------------------------------------------------------------------
+
+def _normalize_freq_features(feats: Dict[str, float], f_shaft: float) -> Dict[str, float]:
+    """Convert absolute-frequency features to speed-invariant shaft orders.
+
+    Mirrors the identical function in the training notebook (Section 3f-ii).
+    Must stay in sync with any changes made there.
+    """
+    hz_suffixes = ('_spectral_centroid', '_spectral_std', '_peak_frequency')
+    for k in list(feats):
+        if any(k.endswith(s) for s in hz_suffixes):
+            feats[k] = feats[k] / (f_shaft + 1e-10)
+    for k in list(feats):
+        if k.endswith('_spectral_variance'):
+            feats[k] = feats[k] / (f_shaft ** 2 + 1e-10)
+    return feats
+
+# ---------------------------------------------------------------------------
 # FastAPI app
 # ---------------------------------------------------------------------------
 app = FastAPI(
@@ -159,6 +195,17 @@ async def predict_mat(file: UploadFile = File(...)):
 
         rpm        = OPERATING_CONDITIONS[sig.setting]["speed_rpm"]
         char_freqs = calc_characteristic_frequencies(rpm)
+
+        # Apply per-condition signal normalisation (mirrors Section 3f of training notebook).
+        _st = _COND_SIGNAL_STATS.get(sig.setting)
+        if _st:
+            sig = dataclasses.replace(
+                sig,
+                vibration       = (sig.vibration       - _st["vib_mean"])  / _st["vib_std"],
+                phase_current_1 = (sig.phase_current_1 - _st["cur1_mean"]) / _st["cur1_std"],
+                phase_current_2 = (sig.phase_current_2 - _st["cur2_mean"]) / _st["cur2_std"],
+            )
+
         feats      = extract_features_from_bearing(
             sig,
             use_current=True,

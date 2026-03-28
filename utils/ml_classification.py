@@ -12,8 +12,9 @@ import numpy as np
 import os
 from typing import Dict, List, Tuple, Optional
 from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.model_selection import StratifiedKFold, cross_val_score
-from sklearn.metrics import (classification_report, confusion_matrix, 
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import StratifiedKFold, StratifiedGroupKFold, cross_val_score
+from sklearn.metrics import (classification_report, confusion_matrix,
                               accuracy_score, f1_score)
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from xgboost import XGBClassifier
@@ -32,18 +33,21 @@ class TraditionalMLPipeline:
     """
     
     def __init__(self):
-        self.scaler = StandardScaler()
-        self.models = self._init_models()
+        self.pipelines = self._init_pipelines()
         self.results = {}
-    
-    def _init_models(self) -> Dict:
-        """Initialize all ML classifiers (matching the paper + extras)."""
-        return {
+
+    def _init_pipelines(self) -> Dict:
+        """Wrap each classifier in a Pipeline so the scaler is re-fit inside every CV fold."""
+        classifiers = {
             'RF':  RandomForestClassifier(n_estimators=100, random_state=42),
             'GBT': GradientBoostingClassifier(n_estimators=100, random_state=42),
             'XGB': XGBClassifier(n_estimators=100, learning_rate=0.1,
                                   max_depth=6, random_state=42,
                                   eval_metric='mlogloss', verbosity=0),
+        }
+        return {
+            name: Pipeline([('scaler', StandardScaler()), ('model', clf)])
+            for name, clf in classifiers.items()
         }
     
     def train_and_evaluate(self, X_train: np.ndarray, y_train: np.ndarray,
@@ -60,21 +64,18 @@ class TraditionalMLPipeline:
         Returns:
             Dictionary of results per model
         """
-        # Scale features
-        X_train_scaled = self.scaler.fit_transform(X_train)
-        X_test_scaled = self.scaler.transform(X_test)
-        
         results = {}
-        
-        for name, model in self.models.items():
+
+        for name, pipe in self.pipelines.items():
             print(f"  Training {name}...", end=' ')
-            model.fit(X_train_scaled, y_train)
-            y_pred = model.predict(X_test_scaled)
-            
+            # scaler is fit only on X_train inside the pipeline — no leakage
+            pipe.fit(X_train, y_train)
+            y_pred = pipe.predict(X_test)
+
             acc = accuracy_score(y_test, y_pred)
             f1 = f1_score(y_test, y_pred, average='weighted')
             cm = confusion_matrix(y_test, y_pred)
-            
+
             results[name] = {
                 'accuracy': acc,
                 'f1_score': f1,
@@ -82,28 +83,41 @@ class TraditionalMLPipeline:
                 'y_pred': y_pred,
                 'report': classification_report(y_test, y_pred, output_dict=True),
             }
-            
+
             print(f"Accuracy: {acc:.4f}, F1: {f1:.4f}")
-        
+
         self.results = results
-        # Store fitted individual models so callers (e.g. MLflow) can log the best one
-        self.fitted_pipelines = {name: model for name, model in self.models.items()}
+        # fitted_pipelines now holds the full Pipeline objects (scaler + model)
+        self.fitted_pipelines = dict(self.pipelines)
         return results
     
-    def cross_validate(self, X: np.ndarray, y: np.ndarray, 
+    def cross_validate(self, X: np.ndarray, y: np.ndarray,
+                       groups: Optional[np.ndarray] = None,
                        n_folds: int = 5) -> Dict:
         """
         Perform k-fold cross-validation for all models.
-        
+
+        Args:
+            X: Feature matrix.
+            y: Encoded label array.
+            groups: Bearing ID array (same length as X). When provided, uses
+                StratifiedGroupKFold so no bearing spans train and val folds.
+                When None, falls back to StratifiedKFold.
+            n_folds: Number of CV folds.
+
         Returns:
-            Dictionary with mean and std accuracy per model
+            Dictionary with mean and std accuracy per model.
         """
-        X_scaled = self.scaler.fit_transform(X)
-        cv = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=42)
-        
+        # Pass raw X — each Pipeline re-fits its own scaler inside each fold
+        if groups is not None:
+            cv = StratifiedGroupKFold(n_splits=n_folds)
+        else:
+            cv = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=42)
+
         results = {}
-        for name, model in self.models.items():
-            scores = cross_val_score(model, X_scaled, y, cv=cv, scoring='accuracy')
+        for name, pipe in self.pipelines.items():
+            scores = cross_val_score(pipe, X, y, cv=cv, groups=groups,
+                                     scoring='accuracy')
             results[name] = {
                 'mean_accuracy': scores.mean(),
                 'std_accuracy': scores.std(),
@@ -496,9 +510,9 @@ if __name__ == '__main__':
     
     # Test traditional ML
     print("Traditional ML (synthetic data):")
-    pipeline = TraditionalMLPipeline()
-    results = pipeline.train_and_evaluate(X_train, y_train, X_test, y_test)
-    
+    ml_pipe = TraditionalMLPipeline()
+    results = ml_pipe.train_and_evaluate(X_train, y_train, X_test, y_test)
+
     print(f"\nBest model: {max(results, key=lambda k: results[k]['accuracy'])}")
     
     # Test CNN model creation
