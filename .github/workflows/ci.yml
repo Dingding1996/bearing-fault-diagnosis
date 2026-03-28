@@ -1,0 +1,49 @@
+# =============================================================
+# CI — Run Unit Tests
+# =============================================================
+# Runs on every push and pull request.
+# Does NOT need AWS credentials or model artifacts.
+# Tests only use synthetic signals (numpy), so no dataset required.
+# =============================================================
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: Unit Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements-inference.txt
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements-inference.txt
+          pip install pytest pytest-cov
+
+      - name: Run unit tests
+        run: pytest tests/ -v --tb=short --cov=utils --cov-report=term-missing
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: .coverage

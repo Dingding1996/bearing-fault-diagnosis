@@ -1,0 +1,164 @@
+# =============================================================
+# Deploy — Build Docker Image → Push ECR → Deploy Elastic Beanstalk
+# =============================================================
+#
+# Triggered on push to main (or manually via workflow_dispatch).
+# Pipeline:
+#   1. Run unit tests
+#   2. Download mlruns/ from S3  (model artifacts)
+#   3. Build Docker image with mlruns/ baked in
+#   4. Push to Amazon ECR
+#   5. Deploy new version to Elastic Beanstalk
+#
+# Required GitHub Secrets (Settings → Secrets → Actions):
+#   AWS_ACCESS_KEY_ID        — IAM user access key
+#   AWS_SECRET_ACCESS_KEY    — IAM user secret key
+#   S3_BUCKET                — e.g. bearing-fault-mlruns-dingding
+# =============================================================
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Reason for manual deploy"
+        required: false
+        default: "Manual trigger"
+
+env:
+  AWS_REGION:       eu-west-1
+  ECR_REPOSITORY:   bearing-fault-api
+  EB_APP_NAME:      bearing-fault-api
+  EB_ENV_NAME:      bearing-fault-env
+
+jobs:
+  # -----------------------------------------------------------
+  # Job 1: Unit tests (must pass before building)
+  # -----------------------------------------------------------
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-inference.txt
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements-inference.txt pytest pytest-cov
+
+      - name: Run unit tests
+        run: pytest tests/ -v --tb=short
+
+  # -----------------------------------------------------------
+  # Job 2: Build image → push ECR → deploy Elastic Beanstalk
+  # -----------------------------------------------------------
+  build-and-deploy:
+    name: Build & Deploy
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Download model artifacts from S3
+        run: |
+          echo "Syncing mlruns/ from s3://${{ secrets.S3_BUCKET }}/mlruns ..."
+          aws s3 sync s3://${{ secrets.S3_BUCKET }}/mlruns ./mlruns \
+            --no-progress --exact-timestamps
+          echo "Model artifacts ready:"
+          ls -lh mlruns/
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image to ECR
+        id: build
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG:    ${{ github.sha }}
+        run: |
+          IMAGE_BASE="$ECR_REGISTRY/$ECR_REPOSITORY"
+          docker build \
+            -t "$IMAGE_BASE:$IMAGE_TAG" \
+            -t "$IMAGE_BASE:latest" \
+            .
+          docker push "$IMAGE_BASE:$IMAGE_TAG"
+          docker push "$IMAGE_BASE:latest"
+          echo "image=$IMAGE_BASE:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update Dockerrun.aws.json with new image tag
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG:    ${{ github.sha }}
+        run: |
+          cat > Dockerrun.aws.json <<EOF
+          {
+            "AWSEBDockerrunVersion": "1",
+            "Image": {
+              "Name": "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG",
+              "Update": "true"
+            },
+            "Ports": [
+              {
+                "ContainerPort": 8000,
+                "HostPort": 80
+              }
+            ]
+          }
+          EOF
+
+      - name: Deploy to Elastic Beanstalk
+        run: |
+          VERSION_LABEL="v-${{ github.sha }}"
+
+          # Zip Dockerrun.aws.json as the deployment bundle
+          zip deploy.zip Dockerrun.aws.json
+
+          # Upload bundle to S3
+          aws s3 cp deploy.zip s3://${{ secrets.S3_BUCKET }}/eb-deploys/$VERSION_LABEL.zip
+
+          # Create new application version
+          aws elasticbeanstalk create-application-version \
+            --application-name $EB_APP_NAME \
+            --version-label "$VERSION_LABEL" \
+            --source-bundle S3Bucket=${{ secrets.S3_BUCKET }},S3Key=eb-deploys/$VERSION_LABEL.zip \
+            --region $AWS_REGION
+
+          # Deploy to environment
+          aws elasticbeanstalk update-environment \
+            --application-name $EB_APP_NAME \
+            --environment-name $EB_ENV_NAME \
+            --version-label "$VERSION_LABEL" \
+            --region $AWS_REGION
+
+          echo "Deployment triggered. Check EB console for status."
+
+      - name: Print environment URL
+        run: |
+          URL=$(aws elasticbeanstalk describe-environments \
+            --application-name $EB_APP_NAME \
+            --environment-names $EB_ENV_NAME \
+            --query "Environments[0].CNAME" \
+            --output text \
+            --region $AWS_REGION)
+          echo "API URL: http://$URL"
+          echo "Health:  http://$URL/health"

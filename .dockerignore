@@ -7,8 +7,9 @@
 paderborn_data/
 data/
 
-# MLflow artefacts (mount as volume at runtime)
-mlruns/
+# MLflow artefacts
+# mlruns/ is intentionally NOT ignored — CI downloads it from S3 before building
+# so it gets baked into the image. Local dev uses docker-compose volume mount instead.
 mlflow.db
 
 # Notebooks and training-only files
