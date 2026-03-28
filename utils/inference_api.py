@@ -42,7 +42,7 @@ from utils.dsp_features import extract_features_from_bearing  # noqa: E402
 _BASE_DIR      = Path(__file__).parent.parent
 MLRUNS_URI     = f"file:///{_BASE_DIR / 'mlruns'}"
 CLASS_NAMES    = ["Healthy", "OR_damage", "IR_damage"]
-MODEL_NAME     = "bearing_fault_xgb"       # registered model name in MLflow Registry
+MODEL_NAME     = "bearing_fault_rf"        # registered model name in MLflow Registry
 SELECTOR_NAME  = "bearing_fault_selector"  # registered selector name in MLflow Registry
 
 # ---------------------------------------------------------------------------
