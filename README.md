@@ -13,8 +13,16 @@ bearing-fault-diagnosis/
 ├── requirements.txt              # Pinned dependencies (training environment)
 ├── requirements-inference.txt    # Minimal dependencies for the Docker inference service
 ├── Dockerfile                    # Container image for the FastAPI inference service
+├── Dockerrun.aws.json            # AWS Elastic Beanstalk deployment configuration
 ├── docker-compose.yml            # Compose config — mounts mlruns/, exposes port 8000
 ├── README.md                     # This file
+├── .github/workflows/
+│   ├── ci.yml                    # Run unit tests on every push
+│   └── deploy.yml                # Build image → push ECR → deploy Elastic Beanstalk
+├── tests/
+│   └── test_features.py          # Unit tests for DSP feature extraction
+├── scripts/
+│   └── upload_model_to_s3.py     # Upload mlruns/ to S3 after training
 ├── utils/
 │   ├── download_dataset.py       # Dataset downloader (library + CLI)
 │   ├── data_loader.py            # Data loading, label mapping, characteristic frequency calculation
@@ -125,6 +133,8 @@ curl -X POST http://localhost:8000/predict_mat \
 - [x] Per-condition signal normalisation (training stats only)
 - [x] MLflow experiment tracking + model registry
 - [x] FastAPI inference service + Docker deployment
+- [x] CI/CD pipeline (GitHub Actions — test → build → push ECR → deploy)
+- [x] Cloud deployment on AWS Elastic Beanstalk (eu-west-1)
 - [ ] Reproduce paper baseline results
 - [ ] Additional harmonic features (4x/5x BPFI/BPFO) or ICS2 cyclostationarity
 
