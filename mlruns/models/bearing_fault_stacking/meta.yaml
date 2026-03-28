@@ -1,8 +1,5 @@
 aliases: {}
 creation_timestamp: 1773347786765
-deployment_job_id: null
-deployment_job_state: null
 description: null
-last_updated_timestamp: 1773347786793
+last_updated_timestamp: 1774633265586
 name: bearing_fault_stacking
-workspace: default
