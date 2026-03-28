@@ -8,9 +8,8 @@ Sensorless fault detection in electric drive systems via DSP feature engineering
 ## Project Structure
 
 ```
-ds_projects/
+bearing-fault-diagnosis/
 ├── BearingFault_Training.ipynb   # End-to-end training pipeline (DSP → ML → MLflow)
-├── BearingFault_Inference.ipynb  # Inference demo (load model → direct + API prediction)
 ├── requirements.txt              # Pinned dependencies (training environment)
 ├── requirements-inference.txt    # Minimal dependencies for the Docker inference service
 ├── Dockerfile                    # Container image for the FastAPI inference service
@@ -20,7 +19,7 @@ ds_projects/
 │   ├── download_dataset.py       # Dataset downloader (library + CLI)
 │   ├── data_loader.py            # Data loading, label mapping, characteristic frequency calculation
 │   ├── dsp_features.py           # DSP feature extraction (183 features: time / freq / TF / envelope)
-│   ├── ml_classification.py      # ML classifiers (RF, GBT, XGBoost)
+│   ├── ml_classification.py      # ML pipeline (RF, GBT, XGBoost) with sklearn Pipeline + StratifiedGroupKFold
 │   ├── inference_api.py          # FastAPI inference service (loaded by Docker)
 │   └── plot_style.py             # Portfolio-wide figure styling
 ├── mlruns/                       # MLflow experiment tracking + model registry (gitignored)
@@ -47,9 +46,6 @@ pip install -r requirements.txt
 
 # 2. Open and run the training notebook (downloads data automatically if missing)
 jupyter lab BearingFault_Training.ipynb
-
-# 3. After training, explore inference
-jupyter lab BearingFault_Inference.ipynb
 ```
 
 The notebook calls `ensure_data()` at startup — if the dataset is already on disk it
@@ -64,6 +60,8 @@ python utils/download_dataset.py              # full dataset, all 32 bearings
 ### Inference API (Docker)
 
 Requires [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+Run the training notebook first to populate `mlruns/` with the trained model and
+per-condition signal statistics (`cond_signal_stats.pkl`).
 
 ```bash
 # Start the API (builds image on first run)
@@ -77,9 +75,8 @@ docker compose up --build
 
 | Endpoint | Method | Input | Description |
 |---|---|---|---|
-| `/health` | GET | — | Health check |
-| `/predict` | POST | JSON with `features` (183 floats per signal) | Predict from pre-extracted features |
-| `/predict_mat` | POST | `.mat` file upload | Full pipeline: raw file → DSP features → prediction |
+| `/health` | GET | — | Health check + serving run ID |
+| `/predict_mat` | POST | `.mat` file upload | Full pipeline: raw file → signal norm → DSP features → prediction |
 
 **Example — upload a raw `.mat` file:**
 ```bash
@@ -90,11 +87,25 @@ curl -X POST http://localhost:8000/predict_mat \
 **Response:**
 ```json
 {
-  "predictions": [2],
-  "labels": ["IR_damage"],
+  "predictions": [1],
+  "labels": ["OR_damage"],
   "run_id": "b1710f7b"
 }
 ```
+
+## Pipeline Overview
+
+| Step | Detail |
+|---|---|
+| Signal normalisation | Per-condition z-score on raw vibration / current (training stats only) |
+| DSP feature extraction | 183 features — time, frequency, WPD, envelope |
+| Frequency normalisation | Hz → shaft orders for spectral features |
+| Feature selection | `SelectFromModel` (RF, median threshold): 183 → ~92 features |
+| CV strategy | `StratifiedGroupKFold` — bearing-aware, no cross-bearing leakage |
+| Hyperparameter tuning | `RandomizedSearchCV` (30 iters, 3-fold inner CV) per model |
+| ML classification | RF, GBT, XGBoost + Stacking meta-ensemble |
+| Leakage prevention | sklearn `Pipeline` wraps scaler + model, re-fit inside every fold |
+| Experiment tracking | MLflow registry — best model served by Docker API |
 
 ## Roadmap
 
@@ -108,11 +119,14 @@ curl -X POST http://localhost:8000/predict_mat \
 
 ### Phase 2 — Traditional ML Classification
 - [x] Feature extraction pipeline (183 features per signal)
+- [x] Feature selection (`SelectFromModel`, 183 → ~92 features)
 - [x] 3 classifiers (RF, GBT, XGBoost) with RandomizedSearchCV tuning
+- [x] Bearing-aware cross-validation (StratifiedGroupKFold — no leakage)
+- [x] Per-condition signal normalisation (training stats only)
 - [x] MLflow experiment tracking + model registry
 - [x] FastAPI inference service + Docker deployment
 - [ ] Reproduce paper baseline results
-- [ ] Feature selection and optimisation
+- [ ] Additional harmonic features (4x/5x BPFI/BPFO) or ICS2 cyclostationarity
 
 ### Phase 3 — Deep Learning
 - [x] 1D-CNN model architecture
