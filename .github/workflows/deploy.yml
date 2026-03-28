@@ -130,8 +130,8 @@ jobs:
         run: |
           VERSION_LABEL="v-${{ github.sha }}"
 
-          # Zip Dockerrun.aws.json as the deployment bundle
-          zip deploy.zip Dockerrun.aws.json
+          # Zip Dockerrun.aws.json + .platform/ (nginx config) as the deployment bundle
+          zip -r deploy.zip Dockerrun.aws.json .platform/
 
           # Upload bundle to S3
           aws s3 cp deploy.zip s3://${{ secrets.S3_BUCKET }}/eb-deploys/$VERSION_LABEL.zip
