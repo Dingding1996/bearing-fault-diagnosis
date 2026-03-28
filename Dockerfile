@@ -2,20 +2,19 @@
 # Bearing Fault Diagnosis — Inference Service
 # =============================================================
 # Serves the trained ML model as a REST API via FastAPI.
-# The model artefacts (mlruns/) are mounted at runtime — not
-# baked into the image — so the same image works with any
-# trained checkpoint.
 #
-# Build:
-#   docker build -t bearing-fault-api .
+# Two build modes:
 #
-# Run (standalone):
-#   docker run -p 8000:8000 \
-#     -v "$(pwd)/mlruns:/app/mlruns:ro" \
-#     bearing-fault-api
+#   CI / AWS (model baked in):
+#     GitHub Actions downloads mlruns/ from S3 before building,
+#     so COPY mlruns/ below embeds the model directly in the image.
+#     docker build -t bearing-fault-api .
 #
-# Run via Compose (recommended):
-#   docker compose up
+#   Local dev (model mounted at runtime):
+#     docker compose up          ← uses docker-compose.yml volume mount
+#     docker run -p 8000:8000 \
+#       -v "$(pwd)/mlruns:/app/mlruns:ro" \
+#       bearing-fault-api
 # =============================================================
 
 FROM python:3.11-slim
@@ -39,11 +38,14 @@ RUN pip install --no-cache-dir -r requirements-inference.txt
 # training artefacts stay on the host.
 COPY utils/ ./utils/
 
+# --- Model artefacts ---
+# In CI builds, GitHub Actions syncs mlruns/ from S3 before `docker build`,
+# so this COPY embeds the trained model in the image (fast cold starts, no
+# runtime S3 dependency).
+# For local dev without mlruns/, use the docker-compose.yml volume mount instead.
+COPY mlruns/ ./mlruns/
+
 # --- Runtime ---
 EXPOSE 8000
-
-# mlruns/ is NOT copied — it must be mounted as a volume at runtime.
-# This keeps the image model-agnostic and avoids bloating it with
-# experiment artefacts that change after every training run.
 
 CMD ["uvicorn", "utils.inference_api:app", "--host", "0.0.0.0", "--port", "8000"]
