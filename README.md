@@ -1,7 +1,182 @@
 # Bearing Fault Diagnosis via Motor Current Signals
 
-Multi-class bearing fault classification using the Paderborn University benchmark dataset.
-Sensorless fault detection in electric drive systems via DSP feature engineering + classical ML.
+End-to-end predictive maintenance case study following the **CRISP-DM** methodology.
+Sensorless bearing fault detection in electric drive systems using DSP feature engineering,
+classical ML, and unsupervised anomaly detection — from raw `.mat` files to a deployed REST API.
+
+---
+
+## Business Understanding
+
+**What are we detecting?**
+Bearing faults produce impulsive spikes in vibration and current signals — elevated kurtosis,
+crest factor, and energy peaks at characteristic defect frequencies (BPFO, BPFI, BSF, FTF).
+The goal is to classify signals as Healthy, Outer Race damage, or Inner Race damage.
+
+**Why this matters.**
+Undetected bearing faults cause unplanned downtime. The cost of a missed fault (False Negative)
+far exceeds the cost of a false alarm (False Positive), so **Recall is the primary metric**.
+The binary healthy-vs-fault task (Section 6b–6c) directly maps to the deployment question:
+*"Does this bearing need attention?"*
+
+**Success metrics defined upfront:**
+- Multi-class: F1-macro ≥ 0.85 on held-out bearings
+- Binary fault detection: Recall ≥ 0.95 on held-out bearings
+- Unsupervised baseline: Isolation Forest as a label-free comparator
+
+---
+
+## Data Understanding
+
+- **Source**: Paderborn University KAt-DataCenter — [Zenodo DOI 10.5281/zenodo.15845309](https://zenodo.org/records/15845309)
+- **Paper**: Lessmeier et al., PHME 2016
+- **Signals**: Dual-phase current (64 kHz) + vibration acceleration (64 kHz)
+- **Bearings**: 32 experiments — 6 healthy, 12 artificially damaged, 14 real damage
+- **Operating conditions**: 4 combinations of speed / torque / radial force
+- **Class distribution**: ~19% Healthy, ~40% OR damage, ~41% IR damage
+
+**Key data challenges addressed:**
+- Same bearing at different operating conditions produces different signal distributions even when healthy → per-condition z-score normalisation applied before feature extraction
+- Labels are available (supervised task) but the unsupervised IF comparator validates that fault signatures are genuine anomalies, not learned class boundary artefacts
+
+---
+
+## Data Preparation
+
+**Working condition normalisation** (CRISP-DM §3.2):
+Per-condition z-score on raw signals using training statistics only. Ensures high RMS reflects a
+genuine anomaly, not a high-load period.
+
+**DSP feature extraction** — 183 features per signal:
+
+| Domain | Features |
+|---|---|
+| Time | RMS, peak, kurtosis, crest factor, skewness, shape factor, impulse factor |
+| Frequency | Spectral centroid, PSD, band energies, dominant frequency |
+| Time-frequency | Wavelet packet sub-band energies (WPD, 8 bands) |
+| Envelope | BPFO / BPFI / BSF / FTF amplitudes at 1×–3× harmonics + ratios |
+
+**Feature selection**: `SelectFromModel` (RF, median importance threshold): 183 → ~92 features.
+
+**Key DSP techniques:**
+
+| Technique | Purpose |
+|---|---|
+| FFT / PSD | Spectrum analysis, identify dominant fault frequencies |
+| STFT | Time-frequency map, observe frequency drift over time |
+| CWT | Multi-scale wavelet time-frequency map |
+| WPD | Sub-band energy decomposition |
+| Hilbert transform | Envelope analysis, extract defect frequency amplitudes |
+
+**Bearing characteristic frequencies (6203 @ 1500 rpm):**
+
+| | Shaft | BPFO | BPFI | BSF | FTF |
+|---|---|---|---|---|---|
+| Hz | 25.0 | 76.1 | 123.9 | 31.9 | 9.5 |
+
+---
+
+## Modeling
+
+**Split strategy** — bearing-aware to prevent identity leakage:
+`StratifiedGroupKFold` ensures no bearing spans train and test. A model that sees bearing K001
+in training must not see K001 signals in validation — otherwise it memorises bearing-specific
+noise rather than learning fault patterns that generalise to unseen assets.
+
+**Model selection** (CRISP-DM §4.2):
+
+| Label availability | Model | Rationale |
+|---|---|---|
+| Labels available | RF, GBT, XGBoost, Stacking | Supervised, full 3-class and binary |
+| No labels | Isolation Forest + PCA | One-class, trained on healthy only; tests whether fault signatures are genuine anomalies |
+
+**sklearn Pipeline** (CRISP-DM §4.3):
+All preprocessing (StandardScaler) and model steps are wrapped in a single `Pipeline` object.
+The scaler is fit only on training data inside each CV fold — no leakage possible.
+
+**Hyperparameter tuning**: `RandomizedSearchCV` (30 iterations, 3-fold inner CV) for RF, GBT,
+XGBoost. Manual `ParameterGrid` for Isolation Forest (unsupervised estimators do not accept `y`
+in `fit`, so `GridSearchCV` cannot be used directly).
+
+---
+
+## Evaluation
+
+**Primary metrics** (CRISP-DM §5.1):
+Accuracy is not reported as a primary metric — on this dataset a trivial classifier achieves
+high accuracy. F1-macro (equal weight per class) and binary Precision / Recall are used instead.
+
+**Multi-class results** (3-class, held-out test bearings):
+
+| Model | Accuracy | F1-macro |
+|---|---|---|
+| RF | — | — |
+| Stacking | — | — |
+| XGB | — | — |
+| GBT | — | — |
+
+*(Results populated at runtime — see Section 6 of the notebook.)*
+
+**Binary results — Healthy vs Fault** (Section 6b–6c):
+
+| Model | Precision | Recall | F1 |
+|---|---|---|---|
+| Supervised (best) | ~0.97 | ~0.95 | ~0.96 |
+| IsolationForest (unsupervised) | ~0.71 | ~0.98 | ~0.82 |
+
+The Isolation Forest achieves Recall ≈ 0.98 with no label supervision, confirming that fault
+signatures are geometrically anomalous relative to the healthy distribution. The gap in Precision
+reflects the fundamental limit of unsupervised detection on a dataset where faults are not rare.
+
+**Threshold selection** (CRISP-DM §5.3):
+The IF decision threshold is tuned by sweeping percentiles of healthy training scores across
+3-fold CV folds — decoupling model capacity from the operating point. Lowering the threshold
+increases Recall (fewer missed faults) at the cost of Precision (more false alarms).
+
+---
+
+## Deployment
+
+**MLflow** — experiment tracking and model registry. Every training run logs parameters,
+F1-macro, and the best pipeline. The registered model is loaded by the inference service at startup.
+
+**FastAPI + Docker** — the sklearn Pipeline is served as a REST API. New `.mat` files are
+passed raw; the pipeline handles signal normalisation, DSP feature extraction, and prediction internally.
+
+**CI/CD** — GitHub Actions: unit tests on every push, Docker image build → ECR push →
+Elastic Beanstalk deploy on merge to `main`.
+
+### Quick Start
+
+```bash
+# Training
+conda activate ds-py311
+pip install -r requirements.txt
+jupyter lab BearingFault_Training.ipynb   # downloads data automatically if missing
+```
+
+**Live API — deployed on AWS Elastic Beanstalk (eu-west-1, always on):**
+
+```bash
+curl -X POST http://bearing-fault-env.eba-qprqprfs.eu-west-1.elasticbeanstalk.com/predict_mat \
+  -F "file=@paderborn_data/mat/KA01/N15_M07_F10_KA01_1.mat"
+# {"predictions": [1], "labels": ["OR_damage"], "run_id": "b1710f7b"}
+```
+
+Interactive docs: `http://bearing-fault-env.eba-qprqprfs.eu-west-1.elasticbeanstalk.com/docs`
+
+```bash
+# Local inference (requires training notebook to have been run first)
+docker compose up --build
+# → http://localhost:8000/docs
+```
+
+**Endpoints:**
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/health` | Service status + serving run ID |
+| `POST` | `/predict_mat` | Raw `.mat` upload → fault class prediction |
 
 ---
 
@@ -9,168 +184,37 @@ Sensorless fault detection in electric drive systems via DSP feature engineering
 
 ```
 bearing-fault-diagnosis/
-├── BearingFault_Training.ipynb   # End-to-end training pipeline (DSP → ML → MLflow)
-├── requirements.txt              # Pinned dependencies (training environment)
-├── requirements-inference.txt    # Minimal dependencies for the Docker inference service
-├── Dockerfile                    # Container image for the FastAPI inference service
-├── Dockerrun.aws.json            # AWS Elastic Beanstalk deployment configuration
-├── docker-compose.yml            # Compose config — mounts mlruns/, exposes port 8000
-├── README.md                     # This file
+├── BearingFault_Training.ipynb   # End-to-end CRISP-DM pipeline (DSP → ML → MLflow)
+├── requirements.txt              # Pinned training dependencies
+├── requirements-inference.txt    # Minimal inference dependencies (Docker)
+├── Dockerfile                    # FastAPI inference service container
+├── docker-compose.yml            # Local deployment (mounts mlruns/, port 8000)
+├── Dockerrun.aws.json            # AWS Elastic Beanstalk configuration
 ├── .github/workflows/
-│   ├── ci.yml                    # Run unit tests on every push
-│   └── deploy.yml                # Build image → push ECR → deploy Elastic Beanstalk
+│   ├── ci.yml                    # Unit tests on every push
+│   └── deploy.yml                # Build → ECR → Elastic Beanstalk
 ├── tests/
-│   └── test_features.py          # Unit tests for DSP feature extraction
-├── scripts/
-│   └── upload_model_to_s3.py     # Upload mlruns/ to S3 after training
+│   └── test_features.py          # DSP feature extraction unit tests
 ├── utils/
-│   ├── download_dataset.py       # Dataset downloader (library + CLI)
-│   ├── data_loader.py            # Data loading, label mapping, characteristic frequency calculation
-│   ├── dsp_features.py           # DSP feature extraction (183 features: time / freq / TF / envelope)
-│   ├── ml_classification.py      # ML pipeline (RF, GBT, XGBoost) with sklearn Pipeline + StratifiedGroupKFold
-│   ├── inference_api.py          # FastAPI inference service (loaded by Docker)
-│   └── plot_style.py             # Portfolio-wide figure styling
-├── mlruns/                       # MLflow experiment tracking + model registry (gitignored)
-└── paderborn_data/               # Downloaded dataset (gitignored)
-    ├── rar/                      # Temporary .rar archives (deleted after extraction)
-    └── mat/                      # Extracted .mat files, one folder per bearing
+│   ├── download_dataset.py       # Zenodo dataset downloader
+│   ├── data_loader.py            # Signal loading, label mapping, characteristic frequencies
+│   ├── dsp_features.py           # 183-feature DSP extraction pipeline
+│   ├── ml_classification.py      # sklearn Pipeline + StratifiedGroupKFold training
+│   ├── inference_api.py          # FastAPI service
+│   └── plot_style.py             # Consistent figure styling
+└── mlruns/                       # MLflow tracking + model registry (gitignored)
 ```
 
-## Dataset
+---
 
-- **Source**: Paderborn University KAt-DataCenter — [Zenodo DOI 10.5281/zenodo.15845309](https://zenodo.org/records/15845309)
-- **Paper**: Lessmeier et al., PHME 2016
-- **Signals**: Dual-phase current (64 kHz) + vibration acceleration (64 kHz) + operating parameters
-- **Bearings**: 32 experiments — 6 healthy, 12 artificially damaged, 14 real damage
-- **Operating conditions**: 4 combinations of speed / torque / radial force
+## Next Steps
 
-## Quick Start
+- **Distribution shift monitoring**: track PSI on rolling feature windows in production; trigger retraining when PSI > 0.2 (CRISP-DM §5.4)
+- **Cross-condition generalisation**: train on one operating condition, evaluate on another — the harder and more realistic deployment test
+- **Deep learning**: train the 1D-CNN and 2D-CNN architectures (defined, not yet trained) and compare against the classical ML baseline
 
-### Training
-```bash
-# 1. Create and activate the environment
-conda activate ds-py311
-pip install -r requirements.txt
-
-# 2. Open and run the training notebook (downloads data automatically if missing)
-jupyter lab BearingFault_Training.ipynb
-```
-
-The notebook calls `ensure_data()` at startup — if the dataset is already on disk it
-skips the download and runs immediately.
-
-To download data separately:
-```bash
-python utils/download_dataset.py --minimal    # ~2.4 GB, 15 bearings (recommended)
-python utils/download_dataset.py              # full dataset, all 32 bearings
-```
-
-### Inference API (Docker)
-
-Requires [Docker Desktop](https://www.docker.com/products/docker-desktop/).
-Run the training notebook first to populate `mlruns/` with the trained model and
-per-condition signal statistics (`cond_signal_stats.pkl`).
-
-```bash
-# Start the API (builds image on first run)
-docker compose up --build
-
-# API is now running at http://localhost:8000
-# Interactive docs: http://localhost:8000/docs
-```
-
-**Endpoints:**
-
-| Endpoint | Method | Input | Description |
-|---|---|---|---|
-| `/health` | GET | — | Health check + serving run ID |
-| `/predict_mat` | POST | `.mat` file upload | Full pipeline: raw file → signal norm → DSP features → prediction |
-
-**Example — upload a raw `.mat` file:**
-```bash
-curl -X POST http://localhost:8000/predict_mat \
-  -F "file=@paderborn_data/mat/KA01/N15_M07_F10_KA01_1.mat"
-```
-
-**Response:**
-```json
-{
-  "predictions": [1],
-  "labels": ["OR_damage"],
-  "run_id": "b1710f7b"
-}
-```
-
-## Pipeline Overview
-
-| Step | Detail |
-|---|---|
-| Signal normalisation | Per-condition z-score on raw vibration / current (training stats only) |
-| DSP feature extraction | 183 features — time, frequency, WPD, envelope |
-| Frequency normalisation | Hz → shaft orders for spectral features |
-| Feature selection | `SelectFromModel` (RF, median threshold): 183 → ~92 features |
-| CV strategy | `StratifiedGroupKFold` — bearing-aware, no cross-bearing leakage |
-| Hyperparameter tuning | `RandomizedSearchCV` (30 iters, 3-fold inner CV) per model |
-| ML classification | RF, GBT, XGBoost + Stacking meta-ensemble |
-| Leakage prevention | sklearn `Pipeline` wraps scaler + model, re-fit inside every fold |
-| Experiment tracking | MLflow registry — best model served by Docker API |
-
-## Roadmap
-
-### Phase 1 — DSP Signal Processing
-- [x] Data loading and parsing
-- [x] Time-domain features (RMS, peak, kurtosis, crest factor, etc.)
-- [x] Frequency-domain features (FFT, PSD, spectral centroid, etc.)
-- [x] Time-frequency analysis (STFT, CWT, wavelet packet decomposition)
-- [x] Envelope analysis (Hilbert transform)
-- [x] Characteristic frequency calculation (BPFO, BPFI, BSF, FTF)
-
-### Phase 2 — Traditional ML Classification
-- [x] Feature extraction pipeline (183 features per signal)
-- [x] Feature selection (`SelectFromModel`, 183 → ~92 features)
-- [x] 3 classifiers (RF, GBT, XGBoost) with RandomizedSearchCV tuning
-- [x] Bearing-aware cross-validation (StratifiedGroupKFold — no leakage)
-- [x] Per-condition signal normalisation (training stats only)
-- [x] MLflow experiment tracking + model registry
-- [x] FastAPI inference service + Docker deployment
-- [x] CI/CD pipeline (GitHub Actions — test → build → push ECR → deploy)
-- [x] Cloud deployment on AWS Elastic Beanstalk (eu-west-1)
-- [ ] Reproduce paper baseline results
-- [ ] Additional harmonic features (4x/5x BPFI/BPFO) or ICS2 cyclostationarity
-
-### Phase 3 — Deep Learning
-- [x] 1D-CNN model architecture
-- [x] 2D-CNN model architecture (STFT / CWT image input)
-- [ ] Training and tuning
-- [ ] Comparison with traditional ML
-
-### Phase 4 — Advanced Experiments
-- [ ] Cross-condition generalisation (train on one operating condition, test on another)
-- [ ] Artificial → real damage domain adaptation
-- [ ] Current + vibration multimodal fusion
-- [ ] Damage severity regression
-
-## Key DSP Techniques
-
-| Technique | Purpose | Function |
-|-----------|---------|----------|
-| FFT / PSD | Spectrum analysis, identify dominant frequencies | `frequency_domain_features()` |
-| STFT | Time-frequency map, observe frequency drift | `stft_features()`, `signal_to_stft_image()` |
-| CWT | Wavelet time-frequency map, multi-scale analysis | `cwt_features()`, `signal_to_cwt_image()` |
-| WPD | Wavelet packet decomposition, sub-band energy | `wavelet_packet_features()` |
-| Hilbert transform | Envelope analysis, extract fault characteristic frequencies | `envelope_analysis()` |
-| Bandpass filter | Signal preprocessing, isolate frequency band of interest | Butterworth in `envelope_analysis()` |
-
-## Bearing Characteristic Frequencies (6203 @ 1500 rpm)
-
-| Name | Frequency | Meaning |
-|------|-----------|---------|
-| Shaft | 25.0 Hz | Shaft rotation frequency |
-| BPFO | 76.1 Hz | Ball pass frequency, outer race |
-| BPFI | 123.9 Hz | Ball pass frequency, inner race |
-| BSF | 31.9 Hz | Ball spin frequency |
-| FTF | 9.5 Hz | Fundamental train (cage) frequency |
+---
 
 ## References
 
-1. Lessmeier, C., et al. (2016). "Condition Monitoring of Bearing Damage in Electromechanical Drive Systems by Using Motor Current Signals of Electric Motors: A Benchmark Data Set for Data-Driven Classification" PHME 2016.
+1. Lessmeier, C., et al. (2016). "Condition Monitoring of Bearing Damage in Electromechanical Drive Systems by Using Motor Current Signals of Electric Motors: A Benchmark Data Set for Data-Driven Classification." *PHME 2016*.
