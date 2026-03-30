@@ -1,4 +1,4 @@
-# Bearing Fault Diagnosis via Motor Current Signals
+# Bearing Fault Diagnosis via Vibration and Motor Current Signals
 
 End-to-end predictive maintenance case study following the **CRISP-DM** methodology.
 Sensorless bearing fault detection in electric drive systems using DSP feature engineering,
@@ -43,36 +43,39 @@ The binary healthy-vs-fault task (Section 6b–6c) directly maps to the deployme
 
 ## Data Preparation
 
-**Working condition normalisation** (CRISP-DM §3.2):
+**Working condition normalisation** :
 Per-condition z-score on raw signals using training statistics only. Ensures high RMS reflects a
 genuine anomaly, not a high-load period.
 
-**DSP feature extraction** — 183 features per signal:
+**DSP feature extraction** — 183 features per signal across four domains:
 
-| Domain | Features |
-|---|---|
-| Time | RMS, peak, kurtosis, crest factor, skewness, shape factor, impulse factor |
-| Frequency | Spectral centroid, PSD, band energies, dominant frequency |
-| Time-frequency | Wavelet packet sub-band energies (WPD, 8 bands) |
-| Envelope | BPFO / BPFI / BSF / FTF amplitudes at 1×–3× harmonics + ratios |
+| Domain | Features | What they capture |
+|---|---|---|
+| Time | RMS (root mean square energy), peak, kurtosis (impulsiveness), crest factor (peak-to-RMS ratio), skewness, shape factor, impulse factor | Overall signal health; kurtosis is the earliest indicator of bearing damage |
+| Frequency | Spectral centroid, PSD (power spectral density), band energies, dominant frequency | Fault-specific energy at known defect frequencies; band ratios are load-invariant |
+| Time-frequency | WPD (wavelet packet decomposition) — 8 sub-band energies at level-3 decomposition | Localises fault energy in both time and frequency simultaneously |
+| Envelope | Amplitudes at BPFO, BPFI, BSF, FTF and their 1×–3× harmonics + inter-frequency ratios | Demodulated fault impulse rates; ratios discriminate outer-race from inner-race damage |
 
-**Feature selection**: `SelectFromModel` (RF, median importance threshold): 183 → ~92 features.
+**Feature selection**: `SelectFromModel` with a Random Forest and median importance threshold — reduces 183 → ~92 features, keeping only those that contribute to class separation.
 
 **Key DSP techniques:**
 
-| Technique | Purpose |
-|---|---|
-| FFT / PSD | Spectrum analysis, identify dominant fault frequencies |
-| STFT | Time-frequency map, observe frequency drift over time |
-| CWT | Multi-scale wavelet time-frequency map |
-| WPD | Sub-band energy decomposition |
-| Hilbert transform | Envelope analysis, extract defect frequency amplitudes |
+| Technique | Full name | Purpose |
+|---|---|---|
+| FFT / PSD | Fast Fourier Transform / Power Spectral Density | Converts time signal to frequency spectrum; identifies dominant fault frequencies |
+| STFT | Short-Time Fourier Transform | Sliding FFT window — tracks how the frequency content changes over time |
+| CWT | Continuous Wavelet Transform | Multi-resolution time-frequency map; resolves both fast transients and slow trends |
+| WPD | Wavelet Packet Decomposition | Splits signal into 8 equal-width frequency sub-bands for energy analysis |
+| Hilbert transform | — | Extracts the signal envelope; exposes the repetition rate of fault impulses |
 
-**Bearing characteristic frequencies (6203 @ 1500 rpm):**
+**Bearing defect frequencies (SKF 6203 @ 1500 rpm, 25 Hz shaft):**
 
-| | Shaft | BPFO | BPFI | BSF | FTF |
-|---|---|---|---|---|---|
-| Hz | 25.0 | 76.1 | 123.9 | 31.9 | 9.5 |
+| Abbreviation | Full name | Frequency | Physical meaning |
+|---|---|---|---|
+| BPFO | Ball Pass Frequency, Outer race | 76.1 Hz | How often a rolling element strikes an outer-race defect |
+| BPFI | Ball Pass Frequency, Inner race | 123.9 Hz | How often a rolling element strikes an inner-race defect |
+| BSF | Ball Spin Frequency | 31.9 Hz | Rotation rate of an individual rolling element (ball) |
+| FTF | Fundamental Train Frequency | 9.5 Hz | Rotation rate of the ball cage |
 
 ---
 
@@ -83,14 +86,14 @@ genuine anomaly, not a high-load period.
 in training must not see K001 signals in validation — otherwise it memorises bearing-specific
 noise rather than learning fault patterns that generalise to unseen assets.
 
-**Model selection** (CRISP-DM §4.2):
+**Model selection** :
 
 | Label availability | Model | Rationale |
 |---|---|---|
 | Labels available | RF, GBT, XGBoost, Stacking | Supervised, full 3-class and binary |
 | No labels | Isolation Forest + PCA | One-class, trained on healthy only; tests whether fault signatures are genuine anomalies |
 
-**sklearn Pipeline** (CRISP-DM §4.3):
+**sklearn Pipeline**:
 All preprocessing (StandardScaler) and model steps are wrapped in a single `Pipeline` object.
 The scaler is fit only on training data inside each CV fold — no leakage possible.
 
@@ -102,7 +105,7 @@ in `fit`, so `GridSearchCV` cannot be used directly).
 
 ## Evaluation
 
-**Primary metrics** (CRISP-DM §5.1):
+**Primary metrics**:
 Accuracy is not reported as a primary metric — on this dataset a trivial classifier achieves
 high accuracy. F1-macro (equal weight per class) and binary Precision / Recall are used instead.
 
@@ -128,7 +131,7 @@ The Isolation Forest achieves Recall ≈ 0.98 with no label supervision, confirm
 signatures are geometrically anomalous relative to the healthy distribution. The gap in Precision
 reflects the fundamental limit of unsupervised detection on a dataset where faults are not rare.
 
-**Threshold selection** (CRISP-DM §5.3):
+**Threshold selection** :
 The IF decision threshold is tuned by sweeping percentiles of healthy training scores across
 3-fold CV folds — decoupling model capacity from the operating point. Lowering the threshold
 increases Recall (fewer missed faults) at the cost of Precision (more false alarms).
@@ -209,7 +212,7 @@ bearing-fault-diagnosis/
 
 ## Next Steps
 
-- **Distribution shift monitoring**: track PSI on rolling feature windows in production; trigger retraining when PSI > 0.2 (CRISP-DM §5.4)
+- **Distribution shift monitoring**: track PSI on rolling feature windows in production; trigger retraining when PSI > 0.2 
 - **Cross-condition generalisation**: train on one operating condition, evaluate on another — the harder and more realistic deployment test
 - **Deep learning**: train the 1D-CNN and 2D-CNN architectures (defined, not yet trained) and compare against the classical ML baseline
 
