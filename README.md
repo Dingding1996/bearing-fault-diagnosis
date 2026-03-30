@@ -1,4 +1,4 @@
-# Bearing Fault Diagnosis via Vibration and Motor Current Signals
+# Bearing Fault Diagnosis via Motor Vibration and Current Signals
 
 End-to-end predictive maintenance case study following the **CRISP-DM** methodology.
 Sensorless bearing fault detection in electric drive systems using DSP feature engineering,
