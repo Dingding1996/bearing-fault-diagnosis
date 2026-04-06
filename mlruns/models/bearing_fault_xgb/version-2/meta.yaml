@@ -1,0 +1,16 @@
+creation_timestamp: 1773396048939
+current_stage: None
+deployment_job_state: null
+description: null
+last_updated_timestamp: 1773396048939
+model_id: m-b7066039cfb1442698cda5fe4d834b80
+name: bearing_fault_xgb
+run_id: 0d20d1c6c4d042a9aec48688dc6814a2
+run_link: null
+source: models:/m-b7066039cfb1442698cda5fe4d834b80
+status: READY
+status_message: null
+storage_location: file:///C:\8. ds\mlruns/315850400606662100/models/m-b7066039cfb1442698cda5fe4d834b80/artifacts
+user_id: null
+version: 2
+workspace: default

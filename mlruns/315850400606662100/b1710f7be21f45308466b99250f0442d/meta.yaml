@@ -1,0 +1,14 @@
+artifact_uri: file:///C:\8. ds\mlruns/315850400606662100/b1710f7be21f45308466b99250f0442d/artifacts
+end_time: 1773415736372
+entry_point_name: ''
+experiment_id: '315850400606662100'
+lifecycle_stage: active
+run_id: b1710f7be21f45308466b99250f0442d
+run_name: ALL_20260313_162837
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1773415717704
+status: 3
+tags: []
+user_id: '20215518'

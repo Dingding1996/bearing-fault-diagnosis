@@ -1,0 +1,15 @@
+artifact_uri: file:///c:/8. ds/bearing-fault-diagnosis/mlruns/315850400606662100/0a4d686de33f4d5abc57f2d089538779/artifacts
+end_time: 1774797611224
+entry_point_name: ''
+experiment_id: '315850400606662100'
+lifecycle_stage: active
+run_id: 0a4d686de33f4d5abc57f2d089538779
+run_name: ALL_20260329_171955
+run_uuid: 0a4d686de33f4d5abc57f2d089538779
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1774797596038
+status: 3
+tags: []
+user_id: '20215518'
