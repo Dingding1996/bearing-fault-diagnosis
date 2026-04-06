@@ -394,81 +394,92 @@ def envelope_features(signal: np.ndarray, fs: int,
 # 5. COMBINED FEATURE EXTRACTION
 # ============================================================
 
-def extract_all_features(signal: np.ndarray, fs: int, 
+def extract_all_features(signal: np.ndarray, fs: int,
                          signal_type: str = 'current',
-                         characteristic_freqs: Optional[Dict] = None) -> Dict[str, float]:
+                         characteristic_freqs: Optional[Dict] = None,
+                         envelope_band: Tuple[float, float] = (500, 10000)) -> Dict[str, float]:
     """
     Extract all features from a single signal.
-    
+
     Args:
         signal: 1D signal array
         fs: Sampling frequency
         signal_type: 'current' or 'vibration' (affects some parameters)
         characteristic_freqs: Bearing characteristic frequencies
-        
+        envelope_band: Bandpass range (Hz) for vibration envelope analysis.
+            Must match the band used during training to keep features consistent.
+            Default (500, 10000) matches the project-wide ENVELOPE_BAND constant.
+
     Returns:
         Combined feature dictionary
     """
     features = {}
-    
+
     # Time-domain
     td = time_domain_features(signal)
     features.update({f'td_{k}': v for k, v in td.items()})
-    
+
     # Frequency-domain
     fd = frequency_domain_features(signal, fs)
     features.update({f'fd_{k}': v for k, v in fd.items()})
-    
+
     # Wavelet packet decomposition
     wpd = wavelet_packet_features(signal, wavelet='db4', level=3)
     features.update({f'wpd_{k}': v for k, v in wpd.items()})
-    
-    # Envelope analysis (if characteristic frequencies provided)
-    if characteristic_freqs is not None:
-        if signal_type == 'vibration':
-            band = (500, 10000)
-        else:  # current
-            band = (50, 5000)
-        
-        env = envelope_features(signal, fs, characteristic_freqs, band)
+
+    # Envelope analysis — vibration only.
+    # Current-signal envelope features (c1_env_*, c2_env_*) were removed: the
+    # 50–5000 Hz bandpass retains the 50 Hz carrier, so the Hilbert envelope
+    # traces the sine-wave amplitude rather than fault-frequency modulation.
+    # Feature-importance analysis confirmed these features ranked below the
+    # median threshold and were eliminated by SelectFromModel.
+    if characteristic_freqs is not None and signal_type == 'vibration':
+        env = envelope_features(signal, fs, characteristic_freqs, band=envelope_band)
         features.update({f'env_{k}': v for k, v in env.items()})
-    
+
     return features
 
 
-def extract_features_from_bearing(bearing_signal, 
+def extract_features_from_bearing(bearing_signal,
                                    use_current: bool = True,
                                    use_vibration: bool = True,
-                                   characteristic_freqs: Optional[Dict] = None) -> Dict[str, float]:
+                                   characteristic_freqs: Optional[Dict] = None,
+                                   envelope_band: Tuple[float, float] = (500, 10000)) -> Dict[str, float]:
     """
     Extract features from a BearingSignal object (both channels).
-    
+
     Args:
         bearing_signal: BearingSignal dataclass instance
         use_current: Include current signal features
         use_vibration: Include vibration signal features
         characteristic_freqs: Bearing characteristic frequencies
-        
+        envelope_band: Bandpass range (Hz) forwarded to extract_all_features()
+            for vibration envelope analysis. Must match ENVELOPE_BAND in the
+            notebook to keep training and inference consistent.
+
     Returns:
         Combined feature dictionary from all channels
     """
     features = {}
     fs = bearing_signal.fs
-    
+
     if use_current:
         c1_feats = extract_all_features(
-            bearing_signal.phase_current_1, fs, 'current', characteristic_freqs)
+            bearing_signal.phase_current_1, fs, 'current', characteristic_freqs,
+            envelope_band=envelope_band)
         features.update({f'c1_{k}': v for k, v in c1_feats.items()})
-        
+
         c2_feats = extract_all_features(
-            bearing_signal.phase_current_2, fs, 'current', characteristic_freqs)
+            bearing_signal.phase_current_2, fs, 'current', characteristic_freqs,
+            envelope_band=envelope_band)
         features.update({f'c2_{k}': v for k, v in c2_feats.items()})
-    
+
     if use_vibration:
         vib_feats = extract_all_features(
-            bearing_signal.vibration, fs, 'vibration', characteristic_freqs)
+            bearing_signal.vibration, fs, 'vibration', characteristic_freqs,
+            envelope_band=envelope_band)
         features.update({f'vib_{k}': v for k, v in vib_feats.items()})
-    
+
     return features
 
 
