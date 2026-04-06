@@ -161,7 +161,7 @@ async def predict_mat(file: UploadFile = File(...)):
     Predict bearing fault class from a raw Paderborn .mat file.
 
     The full pipeline runs server-side:
-      .mat file → load signals → DSP feature extraction (171 features)
+      .mat file → load signals → DSP feature extraction
                → feature selection → model prediction → fault label
 
     The filename must follow Paderborn naming convention so the operating
