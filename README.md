@@ -227,9 +227,7 @@ a small number of edge cases driven by distribution shift across bearing batches
 | Unsupervised | Isolation Forest | 0.743 | 0.955 | **0.836** |
 | Unsupervised (fusion) | AND Ensemble (IF ∩ OC-SVM) | ↑ Precision | ↓ Recall | see notebook |
 
-Both unsupervised models are trained on healthy samples only with no fault labels; both exceed
-the F1 ≥ 0.80 baseline target. AUC-PR (IF = 0.918, OC-SVM = 0.920) are both well above the
-random baseline (0.714), confirming the anomaly scores have learned a genuine signal.
+Both unsupervised models are trained on healthy samples only with no fault labels.
 
 **Threshold selection and operating-point adjustment:**
 Unsupervised model thresholds are selected from the test-set PR curve — among all thresholds
