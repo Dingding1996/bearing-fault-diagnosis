@@ -3,7 +3,7 @@
 基于 **CRISP-DM** 方法论的端到端预测性维护案例研究。
 利用 DSP 特征工程、经典机器学习与无监督异常检测，实现电驱动系统中的无传感器轴承故障检测——从原始信号到云端部署。
 
-![Slide1](https://github.com/user-attachments/assets/a289bb43-45b9-4fbf-b91f-8ebedc18edee)
+![Slide1](https://github.com/user-attachments/assets/f3f15e68-c352-4f89-9430-0007fcaa90b7)
 
 
 
