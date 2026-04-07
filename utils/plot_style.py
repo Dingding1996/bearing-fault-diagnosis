@@ -81,18 +81,18 @@ I1, I2, I3 = greens(3)
 
 # Fault-frequency marker colours (4 shades) — healthy, OR damage, IR damage
 FAULT_COLORS: dict = dict(zip(
-    ["FTF", "BSF", "BPFO", "BPFI"],
-    blues(4, lo=0.30, hi=0.95),
+    ["BPFO", "BPFI"],
+    blues(2, lo=0.40, hi=0.95),
 ))
 
 FAULT_COLORS_DMG: dict = dict(zip(
-    ["FTF", "BSF", "BPFO", "BPFI"],
-    salmons(4, lo=0.30, hi=0.95),
+    ["BPFO", "BPFI"],
+    salmons(2, lo=0.40, hi=0.95),
 ))
 
 FAULT_COLORS_IR: dict = dict(zip(
-    ["FTF", "BSF", "BPFO", "BPFI"],
-    greens(4, lo=0.30, hi=0.95),
+    ["BPFO", "BPFI"],
+    greens(2, lo=0.40, hi=0.95),
 ))
 
 # ---------------------------------------------------------------------------

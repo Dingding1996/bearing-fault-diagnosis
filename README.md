@@ -159,6 +159,14 @@ invalidates the feature cache and triggers recomputation.
 | BSF | Ball Spin Frequency | 31.9 Hz | Rotation rate of an individual rolling element (ball) |
 | FTF | Fundamental Train Frequency | 9.5 Hz | Rotation rate of the ball cage |
 
+**Formulae:**
+
+$$BPFO = \frac{N}{2} \cdot f_n \cdot \left(1 - \frac{d}{D}\cos\theta\right)$$
+
+$$BPFI = \frac{N}{2} \cdot f_n \cdot \left(1 + \frac{d}{D}\cos\theta\right)$$
+
+where: N = number of rolling elements, $f_n$ = shaft frequency (rev/s), d = ball diameter, D = pitch circle diameter, θ = contact angle
+
 ---
 
 ## Modeling
