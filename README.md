@@ -1,8 +1,8 @@
 # Bearing Fault Diagnosis via Motor Vibration and Current Signals
 
-End-to-end predictive maintenance case study following the **CRISP-DM** methodology.
-Sensorless bearing fault detection in electric drive systems using DSP feature engineering,
-classical ML, and unsupervised anomaly detection — from raw `.mat` files to a deployed REST API.
+End-to-end predictive maintenance case study based on CRISP-DM methodology. Covers bearing fault detection in electric drive systems — from raw signal processing and feature engineering, through classical ML-based anomaly detection, to cloud deployment.
+
+![流程](https://github.com/user-attachments/assets/372a0549-b29d-4b68-8e04-f98b21e92b89)
 
 ---
 
